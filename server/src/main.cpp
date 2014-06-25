@@ -6,67 +6,43 @@
 #include <fstream>
 #include <iterator>
 #include <iomanip>
+#include <sstream>
 
 using namespace std;
-
-
-template < typename T, typename Char = char, typename traits = char_traits< Char > >
-class infix_ostream_iterator : public iterator< output_iterator_tag, Char, traits >
-{
-	public:
-	
-		using char_type = Char;
-		using traits_type = traits;
-		using ostream_type = basic_ostream< char_type, traits_type >;
-		using self = infix_ostream_iterator< T, char_type, traits_type >;
-	
-		infix_ostream_iterator( ostream_type& s, const string &delim = string() ) :
-	
-		output( &self::outputFirst ),
-			os( s ),
-			delimiter( delim ) {}
-
-		self& operator = ( const T &item )
-		{
-			(this->*output)( item );
-			return *this;
-		}
-	
-		self& operator*() { return *this; }
-	
-		self& operator++() { return *this; }
-	
-		self& operator++(int) { return *this; }
-	
-	private:
-	
-		void outputFirst( const T &item )
-		{
-			os << item;
-			output = &self::outputRest;
-		}
-		
-		void outputRest( const T &item )
-		{
-			os << delimiter << item;
-		}
-		
-		void (self::*output)(const T &);
-		
-		ostream_type &os;
-		const string delimiter;
-};
 
 struct Tile
 {
 	uint8_t type;
 	uint8_t number;
+	
+	Tile() :
+		type( 0 ),
+		number( 0 ) {}
+	
+	bool operator == ( const Tile &rhs ) const
+	{
+		return ( type == rhs.type ) && ( number == rhs.number );
+	}
+	
+	bool operator < ( const Tile &rhs ) const
+	{
+		if ( type == rhs.type )
+		{
+			return number < rhs.number;
+		}
+		return type < rhs.type;
+	}
+	
+	bool valid() const
+	{
+		return type >= 'A' && type <= 'D' && number > 0 && number < 14;
+	}
 };
 
 using Strings = vector< string >;
 using Tiles = vector< Tile >;
 
-Tiles init_Tiles()
+Tiles init_tiles()
 {
 	Tiles result;
 	
@@ -81,6 +57,10 @@ Tiles init_Tiles()
 		}
 	}
 	
+	auto seed = chrono::system_clock::now().time_since_epoch().count();
+
+	shuffle( result.begin(), result.end(), default_random_engine( seed ) );
+	
 	return move( result );
 }
 
@@ -94,51 +74,110 @@ using Combinations = vector< Tiles >;
 
 using Players = vector< Player >;
 
+template < typename T >
+T trim_left( T t )
+{
+	while ( !t.empty() && isspace( t.front() ) )
+	{
+		t.erase( t.begin() );
+	}
+	return forward< T >( t );
+}
+
+template < typename T >
+T trim_right( T t )
+{
+	while ( !t.empty() && isspace( t.back() ) )
+	{
+		t.pop_back();
+	}
+	return forward< T >( t );
+}
+
+template < typename T >
+T trim( T t )
+{
+	return trim_right( trim_left( t ) );
+}
+
 ostream& operator << ( ostream &str, const Tile &t )
 {
 	str << t.type;
 	str << setw( 2 );
-	str << setfill( '_' ) << static_cast< int >( t.number );
+	str << setfill( '0' ) << static_cast< int >( t.number );
+	return str;
+}
+
+istream& operator >> ( istream &str, Tile &tile )
+{
+	char c = 0;
+	int t = 0;
+	str >> c;
+	switch ( c )
+	{
+		case 'A': case 'B': case 'C': case 'D':
+			break;
+		default:
+			return str;
+	}
+	str >> t;
+	if ( t > 0 && t < 14 )
+	{
+		tile.type = c;
+		tile.number = t;
+	}
+	return str;
+}
+
+istream& operator >> ( istream &str, Tiles &t )
+{
+	while ( str )
+	{
+		Tile tile;
+		str >> tile;
+		if ( tile.valid() )
+		{
+			t.push_back( move( tile ) );
+		}
+	}
+	return str;
+}
+
+istream& operator >> ( istream &str, Combinations &combinations )
+{
+	for ( string line; getline( str, line ); )
+	{
+		Tiles tmp;
+		istringstream( line ) >> tmp;
+		if ( !tmp.empty() )
+		{
+			combinations.push_back( move( tmp ) );
+		}
+	}
 	return str;
 }
 
 ostream& operator << ( ostream &str, const Tiles &t )
 {
-	str << '[';
-	copy( t.begin(), t.end(), infix_ostream_iterator< Tile >( str, "," ) );
-	return str << ']';
+	copy( t.begin(), t.end(), ostream_iterator< Tile >( str, " " ) );
+	return str;
 }
 
 ostream& operator << ( ostream &str, const Combinations &t )
 {
 	for ( auto &i : t )
 	{
-		str << i;
+		str << i << '\n';
 	}
 	return str;
 }
 
-Tiles get_random_Tiles( Tiles &pool, size_t count )
+template < typename T >
+string to_string( const T &t )
 {
-	random_device rd;
-	default_random_engine re( rd() );
-	
-	if ( pool.size() < count )
-	{
-		count = pool.size();
-	}
-	
-	Tiles result;
-	while ( count-- )
-	{
-		uniform_int_distribution< int > random( 0, pool.size() - 1 );
-		auto q = random( re );
-		auto i = pool.begin() + q;
-		result.push_back( *i );
-		pool.erase( i );
-	}
-	
-	return move( result );
+	stringstream s;
+	s << t;
+	return s.str();
 }
 
 string callProcess( string exe )
@@ -151,33 +190,152 @@ string callProcess( string exe )
 	size_t amount = 0;
 	do
 	{
-		buffer.resize( total + 64 );
-		amount = fread( &buffer[ 0 ], 1, buffer.size(), stream.get() );
+		static const auto blocksize = 64;
+		buffer.resize( total + blocksize );
+		amount = fread( &buffer[ total ], 1, blocksize, stream.get() );
 		total += amount;
 		buffer.resize( total );
-
-		cout << string( buffer.begin(), buffer.begin() + amount ) << endl;
 	}
 	while ( amount );
 	
 	return move( buffer );
 }
 
+void validate( const string &result, const Player &player, const Combinations &field, const Tiles &pool )
+{
+	if ( trim( result ) == "draw" && pool.empty() )
+	{
+		throw runtime_error( "player " + player.executable + " tried to draw when there were no tiles left" );
+	}
+	
+	Combinations check;
+	istringstream( result ) >> check;
+	
+}
+
+Tiles diff( Tiles a, Tiles b )
+{
+	sort( a.begin(), a.end() );
+	sort( b.begin(), b.end() );
+	Tiles result( a.size() + b.size() );
+	
+	auto it = set_difference( a.begin(), a.end(), b.begin(), b.end(), result.begin() );
+	
+	result.resize( it - result.begin() );
+		
+	return move( result );
+}
+
+Tiles diff( const Combinations &a, const Combinations &b )
+{
+	Tiles aa, bb;
+	for ( auto &i : a )
+	{
+		aa.insert( aa.end(), i.begin(), i.end() );
+	}
+	for ( auto &i : b )
+	{
+		bb.insert( bb.end(), i.begin(), i.end() );
+	}
+	return diff( aa, bb );
+}
+
+bool setIsValid( Tiles tiles )
+{
+	auto begin = tiles.begin(), end = tiles.end();
+	if ( end - begin < 3 )
+	{
+		return false;
+	}
+
+	sort( begin, end );
+	
+	Tile compare = *begin++;
+	
+	bool suit = true;
+	bool straight = true;
+	
+	for ( ;begin != end && ( straight || suit ); ++begin )
+	{
+		if ( compare.type != begin->type )
+		{
+			suit = false;
+		}
+		
+		if ( begin->number - compare.number != 1 )
+		{
+			straight = false;
+		}
+	}
+	
+	return straight || suit;
+}
+
+void checkCombinations( const Combinations &combinations )
+{
+	for ( auto &c : combinations )
+	{
+		if ( !setIsValid( c ) )
+		{
+			throw runtime_error( "invalid set: " + to_string( c ) );
+		}
+	}
+}
+
 void run_move( Player &player, Tiles &pool, Combinations &combinations )
 {
-	const string temporaryFileName( "/tmp/" + to_string( rand() ) + ".txt" );
-	ofstream temporaryFile( temporaryFileName );
-	temporaryFile << player.inhand << "\n\n" << combinations;
-	temporaryFile.close();
+	const string temporaryFileName( "/tmp/" + to_string( 1 ) + ".txt" );
+	{
+		ofstream temporaryFile( temporaryFileName );
+		temporaryFile
+			<< "hand\n"
+			<< player.inhand
+			<< "\nfield\n"
+			<< combinations;
+	}
 	
-	callProcess( player.executable + " < " + temporaryFileName );
+	string result = callProcess( player.executable + " < " + temporaryFileName );
 	
+	if ( trim( result ) == "draw" )
+	{
+		if ( pool.empty() )
+		{
+			throw runtime_error( "player " + player.executable + " tried to draw when there were no tiles left" );
+		}
+		
+		player.inhand.push_back( move( pool.back() ) );
+		pool.pop_back();
+	}
+	else
+	{
+		Combinations check;
+		istringstream( result ) >> check;
+		
+		auto difference = diff( check, combinations );
+		
+		for ( auto i : difference )
+		{
+			auto found = find( player.inhand.begin(), player.inhand.end(), i );
+			
+			if ( found == player.inhand.end() )
+			{
+				throw runtime_error( "player " + player.executable + " tried to place " + to_string( i ) + " which is not in his possesion" );
+			}
+			player.inhand.erase( found );
+		}
+		
+		checkCombinations( check );
+		
+		combinations = check;
+	}
+	
+	cout << "field:\n" << combinations << endl;
 }
 
 template < typename T >
 void run_game( const T &&executables )
 {
-	Tiles pool = init_Tiles();
+	Tiles pool = init_tiles();
 	
 	Players players;
 	Combinations field;
@@ -186,14 +344,34 @@ void run_game( const T &&executables )
 	{
 		Player p;
 		p.executable = exe;
-		p.inhand = get_random_Tiles( pool, 16 );
+		for ( int i = 0; i < 13*4 && !pool.empty(); ++i )
+		{
+			p.inhand.push_back( move( pool.back() ) );
+			pool.pop_back();
+		}
 		players.push_back( p );
 	}
 	
-	for ( auto &p : players )
+	size_t fieldSize = -1;
+	int round = 1;
+	while ( pool.size() || fieldSize != field.size() )
 	{
-		run_move( p, pool, field );
+		fieldSize = field.size();
+		
+		cout << "round: " << round++ << endl;
+		
+		for ( auto &p : players )
+		{
+			run_move( p, pool, field );
+			if ( p.inhand.empty() )
+			{
+				cout << "player " + p.executable + " won!" << endl;
+				return;
+			}
+		}
 	}
+	
+	cout << "remise!" << endl;
 }
 
 int main( int argc, char *argv[] )
