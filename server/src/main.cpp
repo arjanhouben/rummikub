@@ -8,6 +8,9 @@
 #include <iomanip>
 #include <sstream>
 
+#include <unistd.h>
+#include <fcntl.h>
+
 using namespace std;
 
 struct Tile
@@ -184,16 +187,37 @@ string callProcess( string exe )
 {
 	unique_ptr< FILE, function< decltype( pclose ) > > stream( popen( exe.c_str(), "r" ), pclose );
 	
+	const auto fd = fileno( stream.get() );
+	fcntl( fd, F_SETFL, O_NONBLOCK );
+	
 	string buffer;
 	size_t total = 0;
 
+	auto start = chrono::system_clock::now();
 	size_t amount = 0;
 	do
 	{
 		static const auto blocksize = 64;
 		buffer.resize( total + blocksize );
-		amount = fread( &buffer[ total ], 1, blocksize, stream.get() );
-		total += amount;
+		
+		amount = read( fd, &buffer[ total ], buffer.size() );
+		if ( amount == -1 )
+		{
+			if ( errno != EAGAIN )
+			{
+				throw runtime_error( "problem reading data from " + exe );
+			}
+			auto now = chrono::system_clock::now();
+			if ( chrono::duration_cast< chrono::milliseconds >( now - start ).count() > 10000 )
+			{
+				throw runtime_error( exe + " took too long to respond!" );
+			}
+		}
+		else if ( amount > 0 )
+		{
+			total += amount;
+		}
+		
 		buffer.resize( total );
 	}
 	while ( amount );
