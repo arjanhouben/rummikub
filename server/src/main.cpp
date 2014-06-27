@@ -13,33 +13,99 @@
 
 using namespace std;
 
-struct Tile
+namespace color
 {
-	uint8_t type;
-	uint8_t number;
-	
-	Tile() :
-		type( 0 ),
-		number( 0 ) {}
-	
-	bool operator == ( const Tile &rhs ) const
+	enum type
 	{
-		return ( type == rhs.type ) && ( number == rhs.number );
-	}
-	
-	bool operator < ( const Tile &rhs ) const
+		red = 1 << 0,
+		yellow = 1 << 1,
+		blue = 1 << 2,
+		black = 1 << 3,
+		mask = 0xF
+	};
+}
+
+static const vector< color::type > colors = {
+	color::red,
+	color::yellow,
+	color::blue,
+	color::black
+};
+
+namespace number
+{
+	enum type
 	{
-		if ( type == rhs.type )
+		one = 1 << 4,
+		two = 1 << 5,
+		three = 1 << 6,
+		four = 1 << 7,
+		five = 1 << 8,
+		six = 1 << 9,
+		seven = 1 << 10,
+		eight = 1 << 11,
+		nine = 1 << 12,
+		ten = 1 << 13,
+		eleven = 1 << 14,
+		twelve = 1 << 15,
+		thirteen = 1 << 16,
+		mask = 0x1FFF0
+	};
+}
+
+static const vector< number::type > numbers = {
+	number::one,
+	number::two,
+	number::three,
+	number::four,
+	number::five,
+	number::six,
+	number::seven,
+	number::eight,
+	number::nine,
+	number::ten,
+	number::eleven,
+	number::twelve,
+	number::thirteen
+};
+
+class Tile
+{
+	public:
+	
+	Tile( number::type n, color::type c ) :
+			data_( n | c ) {}
+
+		Tile() :
+			data_( 0 ) {}
+		
+		bool operator == ( const Tile &rhs ) const
 		{
-			return number < rhs.number;
+			return data_ == rhs.data_;
 		}
-		return type < rhs.type;
+		
+		bool operator < ( const Tile &rhs ) const
+		{
+			return data_ < rhs.data_;
+		}
+		
+		bool valid() const
+		{
+			return ( data_ & color::mask ) && ( data_ & number::mask );
+		}
+	
+	color::type color() const
+	{
+		return static_cast< color::type >( data_ & color::mask );
 	}
 	
-	bool valid() const
+	number::type number() const
 	{
-		return type >= 'A' && type <= 'D' && number > 0 && number < 14;
+		return static_cast< number::type >( data_ & number::mask );
 	}
+	
+	private:
+		uint32_t data_;
 };
 
 using Strings = vector< string >;
@@ -49,14 +115,11 @@ Tiles init_tiles()
 {
 	Tiles result;
 	
-	for ( int i = 1; i <= 13; ++i )
+	for ( auto &num : numbers )
 	{
-		for ( char c = 'A'; c <= 'D'; ++c )
+		for ( auto &col : colors )
 		{
-			Tile t;
-			t.number = i;
-			t.type = c;
-			result.push_back( t );
+			result.push_back( { num, col } );
 		}
 	}
 	
@@ -105,9 +168,9 @@ T trim( T t )
 
 ostream& operator << ( ostream &str, const Tile &t )
 {
-	str << t.type;
+	str << t.color();
 	str << setw( 2 );
-	str << setfill( '0' ) << static_cast< int >( t.number );
+	str << setfill( '0' ) << static_cast< int >( t.number() );
 	return str;
 }
 
@@ -126,8 +189,10 @@ istream& operator >> ( istream &str, Tile &tile )
 	str >> t;
 	if ( t > 0 && t < 14 )
 	{
-		tile.type = c;
-		tile.number = t;
+		tile = Tile{
+			static_cast< number::type >( 1 << ( t + 3 ) ),
+			static_cast< color::type >( 1 << ( c - 'A' ) )
+		};
 	}
 	return str;
 }
@@ -281,12 +346,12 @@ bool setIsValid( Tiles tiles )
 	
 	for ( ;begin != end && ( straight || suit ); ++begin )
 	{
-		if ( compare.type != begin->type )
+		if ( compare.color() != begin->color() )
 		{
 			suit = false;
 		}
 		
-		if ( begin->number - compare.number != 1 )
+		if ( begin->number() - compare.number() != 1 )
 		{
 			straight = false;
 		}
@@ -306,6 +371,16 @@ void checkCombinations( const Combinations &combinations )
 	}
 }
 
+size_t tileCount( const Combinations &combinations )
+{
+	size_t total = 0;
+	for ( auto &set : combinations )
+	{
+		total += set.size();
+	}
+	return total;
+}
+
 void run_move( Player &player, Tiles &pool, Combinations &combinations )
 {
 	const string temporaryFileName( "/tmp/" + to_string( 1 ) + ".txt" );
@@ -319,24 +394,29 @@ void run_move( Player &player, Tiles &pool, Combinations &combinations )
 	}
 	
 	string result = callProcess( player.executable + " < " + temporaryFileName );
+
+	Combinations check;
+	istringstream( result ) >> check;
 	
-	if ( trim( result ) == "draw" )
+	if ( tileCount( check ) < tileCount( combinations ) )
 	{
-		if ( pool.empty() )
+		throw runtime_error( "player " + player.executable + " removed tiles from field" );
+	}
+	
+	auto difference = diff( check, combinations );
+	
+	// check for duplicates
+	
+	if ( difference.empty() )
+	{
+		if ( !pool.empty() )
 		{
-			throw runtime_error( "player " + player.executable + " tried to draw when there were no tiles left" );
+			player.inhand.push_back( move( pool.back() ) );
+			pool.pop_back();
 		}
-		
-		player.inhand.push_back( move( pool.back() ) );
-		pool.pop_back();
 	}
 	else
 	{
-		Combinations check;
-		istringstream( result ) >> check;
-		
-		auto difference = diff( check, combinations );
-		
 		for ( auto i : difference )
 		{
 			auto found = find( player.inhand.begin(), player.inhand.end(), i );
