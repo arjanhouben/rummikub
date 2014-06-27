@@ -7,6 +7,9 @@
 #include <iterator>
 #include <iomanip>
 #include <sstream>
+#include <chrono>
+#include <algorithm>
+#include <stdexcept>
 
 #include <unistd.h>
 #include <fcntl.h>
