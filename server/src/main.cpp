@@ -81,16 +81,11 @@ class Tile
 
 		Tile() :
 			data_( 0 ) {}
-		
-		bool operator == ( const Tile &rhs ) const
-		{
-			return data_ == rhs.data_;
-		}
-		
-		bool operator < ( const Tile &rhs ) const
-		{
-			return data_ < rhs.data_;
-		}
+	
+	operator uint32_t() const
+	{
+		return data_;
+	}
 		
 		bool valid() const
 		{
@@ -111,6 +106,7 @@ class Tile
 		uint32_t data_;
 };
 
+
 using Strings = vector< string >;
 using Tiles = vector< Tile >;
 
@@ -118,17 +114,20 @@ Tiles init_tiles()
 {
 	Tiles result;
 	
-	for ( auto &num : numbers )
+	for ( int i = 0; i < 2; ++i )
 	{
-		for ( auto &col : colors )
+		for ( auto &num : numbers )
 		{
-			result.push_back( { num, col } );
+			for ( auto &col : colors )
+			{
+				result.push_back( { num, col } );
+			}
 		}
 	}
 	
 	auto seed = chrono::system_clock::now().time_since_epoch().count();
 
-	shuffle( result.begin(), result.end(), default_random_engine( seed ) );
+	shuffle( begin( result ), end( result ), default_random_engine( /*seed*/0 ) );
 	
 	return move( result );
 }
@@ -136,6 +135,10 @@ Tiles init_tiles()
 struct Player
 {
 	string executable;
+	string name() const
+	{
+		return executable.substr( executable.rfind( '/' ) + 1 );
+	}
 	Tiles inhand;
 };
 
@@ -148,7 +151,7 @@ T trim_left( T t )
 {
 	while ( !t.empty() && isspace( t.front() ) )
 	{
-		t.erase( t.begin() );
+		t.erase( begin( t )() );
 	}
 	return forward< T >( t );
 }
@@ -169,12 +172,72 @@ T trim( T t )
 	return trim_right( trim_left( t ) );
 }
 
-ostream& operator << ( ostream &str, const Tile &t )
+ostream& operator << ( ostream &stream, const Tile &t )
 {
-	str << t.color();
-	str << setw( 2 );
-	str << setfill( '0' ) << static_cast< int >( t.number() );
-	return str;
+	switch ( t.color() )
+	{
+		case color::red:
+			stream << 'A';
+			break;
+		case color::yellow:
+			stream << 'B';
+			break;
+		case color::blue:
+			stream << 'C';
+			break;
+		case color::black:
+			stream << 'D';
+			break;
+		default:
+			throw runtime_error( "unknown color" );
+	}
+	
+	switch ( t.number() )
+	{
+		case number::one:
+			stream << "01";
+			break;
+		case number::two:
+			stream << "02";
+			break;
+		case number::three:
+			stream << "03";
+			break;
+		case number::four:
+			stream << "04";
+			break;
+		case number::five:
+			stream << "05";
+			break;
+		case number::six:
+			stream << "06";
+			break;
+		case number::seven:
+			stream << "07";
+			break;
+		case number::eight:
+			stream << "08";
+			break;
+		case number::nine:
+			stream << "09";
+			break;
+		case number::ten:
+			stream << "10";
+			break;
+		case number::eleven:
+			stream << "11";
+			break;
+		case number::twelve:
+			stream << "12";
+			break;
+		case number::thirteen:
+			stream << "13";
+			break;
+		default:
+			throw runtime_error( "unknown number" );
+	}
+	
+	return stream;
 }
 
 istream& operator >> ( istream &str, Tile &tile )
@@ -230,16 +293,13 @@ istream& operator >> ( istream &str, Combinations &combinations )
 
 ostream& operator << ( ostream &str, const Tiles &t )
 {
-	copy( t.begin(), t.end(), ostream_iterator< Tile >( str, " " ) );
+	copy( begin( t ), end( t ), ostream_iterator< Tile >( str, " " ) );
 	return str;
 }
 
 ostream& operator << ( ostream &str, const Combinations &t )
 {
-	for ( auto &i : t )
-	{
-		str << i << '\n';
-	}
+	copy( begin( t ), end( t ), ostream_iterator< Combinations::value_type >( str, "\n" ) );
 	return str;
 }
 
@@ -251,7 +311,7 @@ string to_string( const T &t )
 	return s.str();
 }
 
-string callProcess( string exe )
+string callProcess( const string &exe )
 {
 	unique_ptr< FILE, function< decltype( pclose ) > > stream( popen( exe.c_str(), "r" ), pclose );
 	
@@ -259,10 +319,9 @@ string callProcess( string exe )
 	fcntl( fd, F_SETFL, O_NONBLOCK );
 	
 	string buffer;
-	size_t total = 0;
+	size_t total = 0, amount = 0;
 
-	auto start = chrono::system_clock::now();
-	size_t amount = 0;
+	const auto start = chrono::system_clock::now();
 	do
 	{
 		static const auto blocksize = 64;
@@ -273,12 +332,12 @@ string callProcess( string exe )
 		{
 			if ( errno != EAGAIN )
 			{
-				throw runtime_error( "problem reading data from " + exe );
+				throw runtime_error( "problem reading data" );
 			}
 			auto now = chrono::system_clock::now();
 			if ( chrono::duration_cast< chrono::milliseconds >( now - start ).count() > 10000 )
 			{
-				throw runtime_error( exe + " took too long to respond!" );
+				throw runtime_error( "took too long to respond" );
 			}
 		}
 		else if ( amount > 0 )
@@ -290,32 +349,20 @@ string callProcess( string exe )
 	}
 	while ( amount );
 	
-	return move( buffer );
-}
-
-void validate( const string &result, const Player &player, const Combinations &field, const Tiles &pool )
-{
-	if ( trim( result ) == "draw" && pool.empty() )
-	{
-		throw runtime_error( "player " + player.executable + " tried to draw when there were no tiles left" );
-	}
-	
-	Combinations check;
-	istringstream( result ) >> check;
-	
+	return buffer;
 }
 
 Tiles diff( Tiles a, Tiles b )
 {
-	sort( a.begin(), a.end() );
-	sort( b.begin(), b.end() );
+	sort( begin( a ), end( a ) );
+	sort( begin( b ), end( b ) );
 	Tiles result( a.size() + b.size() );
 	
-	auto it = set_difference( a.begin(), a.end(), b.begin(), b.end(), result.begin() );
+	auto it = set_difference( begin( a ), end( a ), begin( b ), end( b ), begin( result ) );
 	
-	result.resize( it - result.begin() );
+	result.resize( it - begin( result ) );
 		
-	return move( result );
+	return result;
 }
 
 Tiles diff( const Combinations &a, const Combinations &b )
@@ -323,44 +370,82 @@ Tiles diff( const Combinations &a, const Combinations &b )
 	Tiles aa, bb;
 	for ( auto &i : a )
 	{
-		aa.insert( aa.end(), i.begin(), i.end() );
+		aa.insert( end( aa ), begin( i ), end( i ) );
 	}
 	for ( auto &i : b )
 	{
-		bb.insert( bb.end(), i.begin(), i.end() );
+		bb.insert( end( bb ), begin( i ), end( i ) );
 	}
 	return diff( aa, bb );
 }
 
-bool setIsValid( Tiles tiles )
+inline uint32_t hamming_weight( uint32_t n )
+{
+	n = n - ((n>>1) & 0x55555555);
+	n = (n & 0x33333333) + ((n>>2) & 0x33333333);
+	return ((n + (n>>4) & 0xF0F0F0F) * 0x1010101) >> 24;
+}
+
+inline bool sequential( uint32_t v, uint32_t c )
+{
+	if ( !v || hamming_weight( v ) != c )
+	{
+		return false;
+	}
+	
+	// move till first set bit
+	while ( !(v & 1) )
+	{
+		v >>= 1;
+	}
+	
+	// count set bits
+	while ( v & 1 )
+	{
+		v >>= 1;
+		--c;
+	}
+	
+	// all bits should have been tested, so v == 0
+	return ( c == 0 ) && ( v == 0 );
+}
+
+bool setIsValid( const Tiles &tiles )
 {
 	auto begin = tiles.begin(), end = tiles.end();
-	if ( end - begin < 3 )
+	const auto size = end - begin;
+	if ( size < 3 )
 	{
 		return false;
 	}
 
-	sort( begin, end );
+	uint32_t mask = 0;
 	
-	Tile compare = *begin++;
-	
-	bool suit = true;
-	bool straight = true;
-	
-	for ( ;begin != end && ( straight || suit ); ++begin )
+	while ( begin != end )
 	{
-		if ( compare.color() != begin->color() )
-		{
-			suit = false;
-		}
-		
-		if ( begin->number() - compare.number() != 1 )
-		{
-			straight = false;
-		}
+		mask |= *begin++;
 	}
 	
-	return straight || suit;
+	switch ( mask & color::mask )
+	{
+		case color::red:
+		case color::yellow:
+		case color::blue:
+		case color::black:
+			return sequential( mask & number::mask, size );
+			
+		case color::red | color::yellow | color::blue: // no black
+		case color::red | color::yellow | color::black: // no blue
+		case color::red | color::black | color::blue: // no yellow
+		case color::yellow | color::black | color::blue: // no red
+			return size == 3 && hamming_weight( mask & number::mask ) == 1;
+			
+		case color::mask:
+			return size == 4 && hamming_weight( mask & number::mask ) == 1;
+			
+		default:
+			return false;
+	}
 }
 
 void checkCombinations( const Combinations &combinations )
@@ -384,59 +469,71 @@ size_t tileCount( const Combinations &combinations )
 	return total;
 }
 
-void run_move( Player &player, Tiles &pool, Combinations &combinations )
+template < typename S >
+void generatePlayerInput( Player &player, const Combinations &combinations, S &&stream )
 {
-	const string temporaryFileName( "/tmp/" + to_string( 1 ) + ".txt" );
-	{
-		ofstream temporaryFile( temporaryFileName );
-		temporaryFile
-			<< "hand\n"
-			<< player.inhand
-			<< "\nfield\n"
-			<< combinations;
-	}
-	
-	string result = callProcess( player.executable + " < " + temporaryFileName );
+	sort( player.inhand.begin(), player.inhand.end() );
+	stream
+		<< "hand\n"
+		<< player.inhand
+		<< "\nfield\n"
+		<< combinations;
+}
 
-	Combinations check;
-	istringstream( result ) >> check;
-	
-	if ( tileCount( check ) < tileCount( combinations ) )
+string run_move( Player &player, Tiles &pool, Combinations &combinations )
+{
+	try
 	{
-		throw runtime_error( "player " + player.executable + " removed tiles from field" );
-	}
-	
-	auto difference = diff( check, combinations );
-	
-	// check for duplicates
-	
-	if ( difference.empty() )
-	{
-		if ( !pool.empty() )
-		{
-			player.inhand.push_back( move( pool.back() ) );
-			pool.pop_back();
-		}
-	}
-	else
-	{
-		for ( auto i : difference )
-		{
-			auto found = find( player.inhand.begin(), player.inhand.end(), i );
+		const string temporaryFileName( "/tmp/" + to_string( 1 ) + ".txt" );
+
+		generatePlayerInput( player, combinations, ofstream( temporaryFileName ) );
+		
+		const string result = callProcess( player.executable + " < " + temporaryFileName );
+
+		Combinations check;
+		istringstream( result ) >> check;
 			
-			if ( found == player.inhand.end() )
-			{
-				throw runtime_error( "player " + player.executable + " tried to place " + to_string( i ) + " which is not in his possesion" );
-			}
-			player.inhand.erase( found );
+		if ( tileCount( check ) < tileCount( combinations ) )
+		{
+			throw runtime_error( "player " + player.name() + " removed tiles from field" );
 		}
 		
-		checkCombinations( check );
+		auto difference = diff( check, combinations );
 		
-		combinations = check;
+		// check for duplicates
+		
+		if ( difference.empty() )
+		{
+			if ( !pool.empty() )
+			{
+				player.inhand.push_back( move( pool.back() ) );
+				pool.pop_back();
+			}
+		}
+		else
+		{
+			for ( auto i : difference )
+			{
+				auto found = find( player.inhand.begin(), player.inhand.end(), i );
+				
+				if ( found == player.inhand.end() )
+				{
+					throw runtime_error( "player " + player.name() + " tried to place " + to_string( i ) + " which is not in his possesion" );
+				}
+				player.inhand.erase( found );
+			}
+			
+			checkCombinations( check );
+			
+			combinations = check;
+		}
+		
+		return result;
 	}
-	
-	cout << "field:\n" << combinations << endl;
+	catch( const exception &err )
+	{
+		throw runtime_error( player.name() + ": " + err.what() );
+	}
 }
 
 template < typename T >
@@ -451,7 +548,7 @@ void run_game( const T &&executables )
 	{
 		Player p;
 		p.executable = exe;
-		for ( int i = 0; i < 13*4 && !pool.empty(); ++i )
+		for ( int i = 0; i < 16 && !pool.empty(); ++i )
 		{
 			p.inhand.push_back( move( pool.back() ) );
 			pool.pop_back();
@@ -469,10 +566,18 @@ void run_game( const T &&executables )
 		
 		for ( auto &p : players )
 		{
-			run_move( p, pool, field );
+			cout << "player: " << p.name() << "\n"
+				<< ">>>\n";
+			generatePlayerInput( p, field, cout );
+			cout << "\n<<<\n";
+			
+			cout << run_move( p, pool, field );
+			
+			cout << '\n';
+			
 			if ( p.inhand.empty() )
 			{
-				cout << "player " + p.executable + " won!" << endl;
+				cout << "player " + p.name() + " won!" << endl;
 				return;
 			}
 		}
