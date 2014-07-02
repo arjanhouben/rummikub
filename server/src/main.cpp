@@ -171,10 +171,10 @@ Tiles init_tiles()
 
 struct Player
 {
-	string executable;
-	bool disqualified;
-	Tiles inhand;
-	int id;
+	string executable {};
+	string disqualified {};
+	Tiles inhand {};
+	int id { 0 };
 	
 	string name() const
 	{
@@ -556,12 +556,12 @@ void endGame( Tiles &pool, Combinations &field, Players &players )
 	sort( players,
 		[]( const Player &a, const Player &b )
 		{
-			if ( a.disqualified == b.disqualified )
+			if ( a.disqualified.empty() == b.disqualified.empty() )
 			{
 				return points( a.inhand ) < points( b.inhand );
 			}
 			
-			return !a.disqualified;
+			return a.disqualified.empty();
 		}
 	);
 	
@@ -570,9 +570,9 @@ void endGame( Tiles &pool, Combinations &field, Players &players )
 	for ( auto &p : players )
 	{
 		cout << "nr " << ++position << ": " << p.name();
-		if ( p.disqualified )
+		if ( !p.disqualified.empty() )
 		{
-			cout << "(disqualified)";
+			cout << "(" << p.disqualified << ")";
 		}
 		cout << ", " << to_string( points( p.inhand ) ) << " [ " << p.inhand << " ]" << '\n';
 	}
@@ -620,9 +620,9 @@ void run_game( Tiles &pool, Players &players, Combinations &field )
 			{
 				run_move( p, pool, field );
 			}
-			catch ( ... )
+			catch ( const exception &err )
 			{
-				p.disqualified = true;
+				p.disqualified = err.what();
 				throw;
 			}
 			
@@ -632,6 +632,8 @@ void run_game( Tiles &pool, Players &players, Combinations &field )
 			}
 		}
 	}
+	
+	cout << "players are unable to make another combination\n";
 }
 
 int main( int argc, char *argv[] )
@@ -654,7 +656,7 @@ int main( int argc, char *argv[] )
 	}
 	catch ( const exception &err )
 	{
-		cerr << err.what() << endl;
+		cout << err.what() << endl;
 		
 		endGame( pool, field, players );
 		
