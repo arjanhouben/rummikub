@@ -56,6 +56,41 @@ namespace number
 	};
 }
 
+size_t value( number::type t )
+{
+	switch ( t )
+	{
+		case number::one:
+			return 1;
+		case number::two:
+			return 2;
+		case number::three:
+			return 3;
+		case number::four:
+			return 4;
+		case number::five:
+			return 5;
+		case number::six:
+			return 6;
+		case number::seven:
+			return 7;
+		case number::eight:
+			return 8;
+		case number::nine:
+			return 9;
+		case number::ten:
+			return 10;
+		case number::eleven:
+			return 11;
+		case number::twelve:
+			return 12;
+		case number::thirteen:
+			return 13;
+		default:
+			return 0;
+	}
+}
+
 static const vector< number::type > numbers = {
 	number::one,
 	number::two,
@@ -71,6 +106,8 @@ static const vector< number::type > numbers = {
 	number::twelve,
 	number::thirteen
 };
+
+
 
 class Tile
 {
@@ -129,17 +166,20 @@ Tiles init_tiles()
 
 	shuffle( begin( result ), end( result ), default_random_engine( /*seed*/0 ) );
 	
-	return move( result );
+	return result;
 }
 
 struct Player
 {
 	string executable;
+	bool disqualified;
+	Tiles inhand;
+	int id;
+	
 	string name() const
 	{
-		return executable.substr( executable.rfind( '/' ) + 1 );
+		return executable.substr( executable.rfind( '/' ) + 1 ) + '(' + to_string( id ) + ')';
 	}
-	Tiles inhand;
 };
 
 using Combinations = vector< Tiles >;
@@ -192,50 +232,7 @@ ostream& operator << ( ostream &stream, const Tile &t )
 			throw runtime_error( "unknown color" );
 	}
 	
-	switch ( t.number() )
-	{
-		case number::one:
-			stream << "01";
-			break;
-		case number::two:
-			stream << "02";
-			break;
-		case number::three:
-			stream << "03";
-			break;
-		case number::four:
-			stream << "04";
-			break;
-		case number::five:
-			stream << "05";
-			break;
-		case number::six:
-			stream << "06";
-			break;
-		case number::seven:
-			stream << "07";
-			break;
-		case number::eight:
-			stream << "08";
-			break;
-		case number::nine:
-			stream << "09";
-			break;
-		case number::ten:
-			stream << "10";
-			break;
-		case number::eleven:
-			stream << "11";
-			break;
-		case number::twelve:
-			stream << "12";
-			break;
-		case number::thirteen:
-			stream << "13";
-			break;
-		default:
-			throw runtime_error( "unknown number" );
-	}
+	stream << setw( 2 ) << setfill( '0' ) << value( t.number() );
 	
 	return stream;
 }
@@ -303,6 +300,18 @@ ostream& operator << ( ostream &str, const Combinations &t )
 	return str;
 }
 
+template < typename T, typename Cmp >
+void sort( T &t, Cmp c )
+{
+	sort( begin( t ), end( t ), c );
+}
+
+template < typename T >
+void sort( T &t )
+{
+	sort( begin( t ), end( t ) );
+}
+
 template < typename T >
 string to_string( const T &t )
 {
@@ -313,7 +322,7 @@ string to_string( const T &t )
 
 string callProcess( const string &exe )
 {
-	unique_ptr< FILE, function< decltype( pclose ) > > stream( popen( exe.c_str(), "r" ), pclose );
+	unique_ptr< FILE, decltype( &pclose ) > stream( popen( exe.c_str(), "r" ), &pclose );
 	
 	const auto fd = fileno( stream.get() );
 	fcntl( fd, F_SETFL, O_NONBLOCK );
@@ -334,11 +343,14 @@ string callProcess( const string &exe )
 			{
 				throw runtime_error( "problem reading data" );
 			}
+			
 			auto now = chrono::system_clock::now();
 			if ( chrono::duration_cast< chrono::milliseconds >( now - start ).count() > 10000 )
 			{
 				throw runtime_error( "took too long to respond" );
 			}
+			
+			usleep( 10 );
 		}
 		else if ( amount > 0 )
 		{
@@ -480,82 +492,115 @@ void generatePlayerInput( Player &player, const Combinations &combinations, S &&
 		<< combinations;
 }
 
-string run_move( Player &player, Tiles &pool, Combinations &combinations )
+void run_move( Player &player, Tiles &pool, Combinations &combinations )
 {
-	try
+	const string temporaryFileName( "/tmp/" + to_string( 1 ) + ".txt" );
+
+	generatePlayerInput( player, combinations, ofstream( temporaryFileName ) );
+	
+	const string result = callProcess( player.executable + " < " + temporaryFileName );
+	
+	cout << result;
+
+	Combinations check;
+	istringstream( result ) >> check;
+		
+	if ( tileCount( check ) < tileCount( combinations ) )
 	{
-		const string temporaryFileName( "/tmp/" + to_string( 1 ) + ".txt" );
-
-		generatePlayerInput( player, combinations, ofstream( temporaryFileName ) );
-		
-		const string result = callProcess( player.executable + " < " + temporaryFileName );
-
-		Combinations check;
-		istringstream( result ) >> check;
-			
-		if ( tileCount( check ) < tileCount( combinations ) )
-		{
-			throw runtime_error( "player " + player.name() + " removed tiles from field" );
-		}
-		
-		auto difference = diff( check, combinations );
-		
-		// check for duplicates
-		
-		if ( difference.empty() )
-		{
-			if ( !pool.empty() )
-			{
-				player.inhand.push_back( move( pool.back() ) );
-				pool.pop_back();
-			}
-		}
-		else
-		{
-			for ( auto i : difference )
-			{
-				auto found = find( player.inhand.begin(), player.inhand.end(), i );
-				
-				if ( found == player.inhand.end() )
-				{
-					throw runtime_error( "player " + player.name() + " tried to place " + to_string( i ) + " which is not in his possesion" );
-				}
-				player.inhand.erase( found );
-			}
-			
-			checkCombinations( check );
-			
-			combinations = check;
-		}
-		
-		return result;
+		throw runtime_error( "tiles removed from field" );
 	}
-	catch( const exception &err )
+	
+	auto difference = diff( check, combinations );
+	
+	// check for duplicates
+	
+	if ( difference.empty() )
 	{
-		throw runtime_error( player.name() + ": " + err.what() );
+		if ( !pool.empty() )
+		{
+			player.inhand.push_back( move( pool.back() ) );
+			pool.pop_back();
+		}
+	}
+	else
+	{
+		for ( auto i : difference )
+		{
+			auto found = find( player.inhand.begin(), player.inhand.end(), i );
+			
+			if ( found == player.inhand.end() )
+			{
+				throw runtime_error( to_string( i ) + " was not owned" );
+			}
+			player.inhand.erase( found );
+		}
+		
+		checkCombinations( check );
+		
+		combinations = check;
+	}
+}
+
+size_t points( const Tiles &tiles )
+{
+	size_t total = 0;
+	for ( auto &i : tiles )
+	{
+		total += value( i.number() );
+	}
+	return total;
+}
+
+void endGame( Tiles &pool, Combinations &field, Players &players )
+{
+	sort( players,
+		[]( const Player &a, const Player &b )
+		{
+			if ( a.disqualified == b.disqualified )
+			{
+				return points( a.inhand ) < points( b.inhand );
+			}
+			
+			return !a.disqualified;
+		}
+	);
+	
+	size_t position = 0;
+	cout << "game is finished, score:\n";
+	for ( auto &p : players )
+	{
+		cout << "nr " << ++position << ": " << p.name();
+		if ( p.disqualified )
+		{
+			cout << "(disqualified)";
+		}
+		cout << ", " << to_string( points( p.inhand ) ) << " [ " << p.inhand << " ]" << '\n';
 	}
 }
 
 template < typename T >
-void run_game( const T &&executables )
+Players getPlayers( T &&executables, Tiles &pool )
 {
-	Tiles pool = init_tiles();
-	
 	Players players;
-	Combinations field;
 	
+	int id = 0;
 	for ( auto &exe : executables )
 	{
 		Player p;
+		p.id = ++id;
 		p.executable = exe;
-		for ( int i = 0; i < 16 && !pool.empty(); ++i )
-		{
-			p.inhand.push_back( move( pool.back() ) );
-			pool.pop_back();
-		}
+		auto start = pool.begin();
+		auto end = start + min< size_t >( 16, pool.size() );
+		p.inhand.assign( start, end );
+		pool.erase( start, end );
 		players.push_back( p );
 	}
 	
+	return players;
+}
+
+void run_game( Tiles &pool, Players &players, Combinations &field )
+{
 	size_t fieldSize = -1;
 	int round = 1;
 	while ( pool.size() || fieldSize != field.size() )
@@ -571,23 +616,30 @@ void run_game( const T &&executables )
 			generatePlayerInput( p, field, cout );
 			cout << "\n<<<\n";
 			
-			cout << run_move( p, pool, field );
-			
-			cout << '\n';
+			try
+			{
+				run_move( p, pool, field );
+			}
+			catch ( ... )
+			{
+				p.disqualified = true;
+				throw;
+			}
 			
 			if ( p.inhand.empty() )
 			{
-				cout << "player " + p.name() + " won!" << endl;
 				return;
 			}
 		}
 	}
-	
-	cout << "remise!" << endl;
 }
 
 int main( int argc, char *argv[] )
 {
+	Tiles pool;
+	Players players;
+	Combinations field;
+	
 	try
 	{
 		if ( argc < 2 )
@@ -595,14 +647,21 @@ int main( int argc, char *argv[] )
 			throw runtime_error( "no clients specified" );
 		}
 		
-		run_game( Strings( argv + 1, argv + argc ) );
+		pool = init_tiles();
+		players = getPlayers( Strings( argv + 1, argv + argc ), pool );
+		
+		run_game( pool, players, field );
 	}
 	catch ( const exception &err )
 	{
 		cerr << err.what() << endl;
 		
+		endGame( pool, field, players );
+		
 		return 1;
 	}
+	
+	endGame( pool, field, players );
 	
 	return 0;
 }

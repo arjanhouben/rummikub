@@ -6,8 +6,11 @@
 #include <fstream>
 #include <functional>
 #include <algorithm>
+#include <iomanip>
 
 using namespace std;
+
+using value_type = uint32_t;
 
 class test
 {
@@ -116,7 +119,7 @@ class Tile
 		Tile() :
 			data_( 0 ) {}
 		
-		operator uint32_t() const
+		operator value_type() const
 		{
 			return data_;
 		}
@@ -135,33 +138,19 @@ class Tile
 		{
 			return static_cast< number::type >( data_ & number::mask );
 		}
-	
-		uint32_t operator | ( const Tile &rhs ) const
-		{
-			return data_ | rhs.data_;
-		}
-		
-		uint32_t operator & ( const Tile &rhs ) const
-		{
-			return data_ & rhs.data_;
-		}
-		
-		uint32_t operator | ( uint32_t rhs ) const
-		{
-			return data_ | rhs;
-		}
-		
-		uint32_t operator & ( uint32_t rhs ) const
-		{
-			return data_ & rhs;
-		}
 		
 	private:
-		uint32_t data_;
+		value_type data_;
 };
 
 using Strings = vector< string >;
 using Tiles = vector< Tile >;
+
+Tiles operator + ( Tiles a, const Tiles &b )
+{
+	a.insert( a.end(), b.begin(), b.end() );
+	return a;
+}
 
 istream& operator >> ( istream &str, Tile &tile )
 {
@@ -186,6 +175,41 @@ istream& operator >> ( istream &str, Tile &tile )
 	return str;
 }
 
+size_t value( number::type t )
+{
+	switch ( t )
+	{
+		case number::one:
+			return 1;
+		case number::two:
+			return 2;
+		case number::three:
+			return 3;
+		case number::four:
+			return 4;
+		case number::five:
+			return 5;
+		case number::six:
+			return 6;
+		case number::seven:
+			return 7;
+		case number::eight:
+			return 8;
+		case number::nine:
+			return 9;
+		case number::ten:
+			return 10;
+		case number::eleven:
+			return 11;
+		case number::twelve:
+			return 12;
+		case number::thirteen:
+			return 13;
+		default:
+			return 0;
+	}
+}
+
 ostream& operator << ( ostream &stream, const Tile &t )
 {
 	switch ( t.color() )
@@ -206,55 +230,23 @@ ostream& operator << ( ostream &stream, const Tile &t )
 			throw runtime_error( "unknown color" );
 	}
 	
-	switch ( t.number() )
-	{
-		case number::one:
-			stream << "01";
-			break;
-		case number::two:
-			stream << "02";
-			break;
-		case number::three:
-			stream << "03";
-			break;
-		case number::four:
-			stream << "04";
-			break;
-		case number::five:
-			stream << "05";
-			break;
-		case number::six:
-			stream << "06";
-			break;
-		case number::seven:
-			stream << "07";
-			break;
-		case number::eight:
-			stream << "08";
-			break;
-		case number::nine:
-			stream << "09";
-			break;
-		case number::ten:
-			stream << "10";
-			break;
-		case number::eleven:
-			stream << "11";
-			break;
-		case number::twelve:
-			stream << "12";
-			break;
-		case number::thirteen:
-			stream << "13";
-			break;
-		default:
-			throw runtime_error( "unknown number" );
-	}
+	stream << setw( 2 ) << setfill( '0' ) << value( t.number() );
 	
 	return stream;
 }
 
-using Combinations = vector< Tiles >;
+struct Combinations : vector< Tiles >
+{
+	Tiles tiles() const
+	{
+		Tiles result;
+		for ( auto &set : *this )
+		{
+			result.insert( result.end(), set.begin(), set.end() );
+		}
+		return result;
+	}
+};
 
 template < typename T >
 istream& operator >> ( istream &str, T &tiles )
@@ -281,27 +273,33 @@ ostream& operator << ( ostream &stream, const Combinations &t )
 	return stream;
 }
 
+template < typename T, typename Cmp >
+void sort( T &t, Cmp c )
+{
+	sort( begin( t ), end( t ), c );
+}
+
 template < typename T >
 void sort( T &t )
 {
 	sort( begin( t ), end( t ) );
 }
 
-inline uint32_t hamming_weight( uint32_t n )
+inline value_type hamming_weight( value_type n )
 {
 	n = n - ((n>>1) & 0x55555555);
 	n = (n & 0x33333333) + ((n>>2) & 0x33333333);
 	return (((n + (n>>4)) & 0xF0F0F0F) * 0x1010101) >> 24;
 }
 
-inline bool adjecent( uint32_t a, uint32_t b )
+inline bool adjecent( value_type a, value_type b )
 {
 	return ( ( a >> 1 ) | ( a << 1 ) ) & b;
 }
 
 test adjecent_test = []()
 {
-	uint32_t a, b;
+	value_type a, b;
 	a = 1 << 2;
 	b = 1 << 3;
 	test::is_true( __LINE__, adjecent( a, b ) );
@@ -311,72 +309,8 @@ test adjecent_test = []()
 	test::is_true( __LINE__, !adjecent( a, b ) );
 };
 
-Tiles::iterator find_next_in_sequence( Tile tile, Tiles &pool )
-{
-	auto next = [&]( const Tile &t )
-	{
-		return ( t.color() == tile.color() ) && ( adjecent( tile.number(), t.number() ) );
-	};
-	return find_if( pool.begin(), pool.end(), next );
-}
 
-Tiles::iterator find_next_in_color( const Tiles &seq, Tiles &pool )
-{
-//	auto next = [&]( const Tile &t )
-//	{
-//		return ( t.number() == tile.number() ) && ( tile.color() != t.color() );
-//	};
-//	return find_if( pool.begin(), pool.end(), next );
-}
-
-Tiles find_next( Tile tile, Tiles &pool )
-{
-	Tiles tmp_color = pool;
-	Tiles tmp_number = pool;
-	
-	Tiles colorseq { tile };
-	for ( auto result = find_next_in_color( colorseq, tmp_color ); result != tmp_color.end(); )
-	{
-		colorseq.push_back( *result );
-		tmp_color.erase( result );
-		result = find_next_in_color( colorseq, tmp_color );
-	}
-	
-	Tiles numberseq { tile };
-	for ( auto result = find_next_in_sequence( numberseq.back(), tmp_number ); result != tmp_number.end(); )
-	{
-		numberseq.push_back( *result );
-		tmp_number.erase( result );
-		result = find_next_in_sequence( numberseq.back(), tmp_number );
-	}
-	
-	if ( colorseq.size() > numberseq.size() )
-	{
-		pool = tmp_color;
-		return colorseq;
-	}
-	
-	pool = tmp_number;
-	return numberseq;
-}
-
-test find_next_test = []()
-{
-	Tile q = { color::red, number::one };
-	Tiles expected = {
-		{ color::red, number::one },
-		{ color::red, number::two },
-		{ color::red, number::three }
-	};
-	Tiles input = {
-		{ color::red, number::two },
-		{ color::red, number::three },
-		{ color::red, number::one }
-	};
-	test::equal( __LINE__, expected, find_next( expected.front(), input ) );
-};
-
-using filter_type = function< bool(uint32_t) >;
+using filter_type = function< bool(value_type) >;
 
 template < typename Container >
 Container operator | ( const Container &container, filter_type f )
@@ -392,9 +326,9 @@ Container operator | ( const Container &container, filter_type f )
 	return result;
 }
 
-filter_type filter( uint32_t t )
+filter_type filter( value_type t )
 {
-	return { [t]( uint32_t i ) { return i & t; } };
+	return { [t]( value_type i ) { return i & t; } };
 }
 
 template < typename T >
@@ -404,10 +338,36 @@ void unique( T &source )
 	source.resize( end - source.begin() );
 }
 
+void remove( Tiles &tiles, const Tile &tile )
+{
+	auto found = find( tiles.begin(), tiles.end(), tile );
+	if ( found != tiles.end() )
+	{
+		tiles.erase( found );
+	}
+}
+
+void remove( Tiles &tiles, const Tiles &removetiles )
+{
+	for ( auto &r : removetiles )
+	{
+		remove( tiles, r );
+	}
+}
+
+void remove( Tiles &tiles, const Combinations &combinations )
+{
+	for ( auto &set : combinations )
+	{
+		for ( auto &tile : set )
+		{
+			remove( tiles, tile );
+		}
+	}
+}
+
 Combinations createCombinations( Tiles tiles )
 {
-	sort( tiles );
-	
 	Combinations result;
 	
 	for ( auto &col : { color::red, color::yellow, color::blue, color::black } )
@@ -415,6 +375,48 @@ Combinations createCombinations( Tiles tiles )
 		auto colortiles = tiles | filter( col );
 		sort( colortiles );
 		unique( colortiles );
+		auto start = colortiles.begin();
+		auto val = ( *start++ ) & number::mask;
+		while ( start != colortiles.end() )
+		{
+			auto nextval = *start & number::mask;
+			if ( !adjecent( val, nextval ) )
+			{
+				break;
+			}
+			
+			val = nextval;
+			
+			++start;
+		}
+		auto size = start - colortiles.begin();
+		if ( size > 2 )
+		{
+			result.push_back( { colortiles.begin(), start } );
+			
+			remove( tiles, result.back() );
+		}
+	}
+	
+	for ( auto &num : { number::one, number::two, number::three, number::four, number::five, number::six, number::seven, number::eight, number::nine, number::ten, number::eleven, number::twelve, number::thirteen } )
+	{
+		auto numbertiles = tiles | filter( num );
+		sort( numbertiles );
+		unique( numbertiles );
+		auto mask = color::mask;
+		Tiles tmp;
+		for ( auto &t : numbertiles )
+		{
+			if ( t & mask )
+			{
+				tmp.push_back( t );
+			}
+		}
+		if ( tmp.size() > 2 )
+		{
+			remove( tiles, tmp );
+			result.push_back( move( tmp ) );
+		}
 	}
 	
 	return result;
@@ -459,7 +461,11 @@ int main(int,char**)
 			}
 		}
 		
-		Combinations fromHand = createCombinations( hand );
+		Tiles combined = field.tiles() + hand;
+		
+		field.clear();
+
+		Combinations fromHand = createCombinations( combined );
 		for ( auto &s : fromHand )
 		{
 			field.push_back( s );
