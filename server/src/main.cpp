@@ -10,9 +10,11 @@
 #include <chrono>
 #include <algorithm>
 #include <stdexcept>
+#include <thread>
 
 #include <unistd.h>
 #include <fcntl.h>
+#include <dlfcn.h>
 
 using namespace std;
 
@@ -137,6 +139,16 @@ class Tile
 	number::type number() const
 	{
 		return static_cast< number::type >( data_ & number::mask );
+	}
+	
+	static bool compareNumber( Tile a, Tile b )
+	{
+		return a.number() == b.number();
+	}
+	
+	static bool compareColor( Tile a, Tile b )
+	{
+		return a.color() == b.color();
 	}
 	
 	private:
@@ -320,48 +332,70 @@ string to_string( const T &t )
 	return s.str();
 }
 
-string callProcess( const string &exe )
+class Dll
 {
-	unique_ptr< FILE, decltype( &pclose ) > stream( popen( exe.c_str(), "r" ), &pclose );
+	public:
+		
+		Dll( const string &path ) :
+			handle_( dlopen( path.c_str(), RTLD_LAZY ), &dlclose )
+		{
+			
+		}
 	
-	const auto fd = fileno( stream.get() );
-	fcntl( fd, F_SETFL, O_NONBLOCK );
-	
-	string buffer;
-	size_t total = 0, amount = 0;
+		string call( const string &input, size_t ms )
+		{
+			MainFunction m = reinterpret_cast< MainFunction >( dlsym( handle_.get(), "main" ) );
+			if ( !m )
+			{
+				throw runtime_error( "could not start" );
+			}
+			stringbuf playerInput( input ), playerOutput;
+			volatile bool done = false;
+			
+			using rbuf = decay< decltype( *cin.rdbuf() ) >::type;
 
-	const auto start = chrono::system_clock::now();
-	do
-	{
-		static const auto blocksize = 64;
-		buffer.resize( total + blocksize );
-		
-		amount = read( fd, &buffer[ total ], buffer.size() );
-		if ( amount == -1 )
-		{
-			if ( errno != EAGAIN )
+			auto putbackCin = []( rbuf *old ) { cin.rdbuf( old ); };
+			auto putbackCout = []( rbuf *old ) { cout.rdbuf( old ); };
+			unique_ptr< rbuf, decltype( putbackCin ) > oldCin( cin.rdbuf( &playerInput ), putbackCin );
+			unique_ptr< rbuf, decltype( putbackCout ) > oldCout( cout.rdbuf( &playerOutput ), putbackCout );
+
+			auto run = [&]()
 			{
-				throw runtime_error( "problem reading data" );
+				m( 0, nullptr );
+				done = true;
+			};
+			thread thread_( run );
+			
+			const auto start = chrono::system_clock::now();
+			while ( !done )
+			{
+				if ( chrono::duration_cast< chrono::milliseconds >( chrono::system_clock::now() - start ).count() < ms )
+				{
+					usleep( 1e3 );
+				}
+				else
+				{
+					thread_.join();
+					throw runtime_error( "player took too long to respond!" );
+				}
 			}
 			
-			auto now = chrono::system_clock::now();
-			if ( chrono::duration_cast< chrono::milliseconds >( now - start ).count() > 10000 )
-			{
-				throw runtime_error( "took too long to respond" );
-			}
+			thread_.join();
 			
-			usleep( 10 );
-		}
-		else if ( amount > 0 )
-		{
-			total += amount;
+			return playerOutput.str();
 		}
 		
-		buffer.resize( total );
-	}
-	while ( amount );
-	
-	return buffer;
+	private:
+
+		using MainFunction = int (*)(int,char**);
+
+		unique_ptr< void, decltype( &dlclose ) > handle_;
+};
+
+string callProcess( const string &input, const string &exe )
+{
+	Dll dll( exe );
+	return dll.call( input, 10000 );
 }
 
 Tiles diff( Tiles a, Tiles b )
@@ -494,11 +528,10 @@ void generatePlayerInput( Player &player, const Combinations &combinations, S &&
 
 void run_move( Player &player, Tiles &pool, Combinations &combinations )
 {
-	const string temporaryFileName( "/tmp/" + to_string( 1 ) + ".txt" );
-
-	generatePlayerInput( player, combinations, ofstream( temporaryFileName ) );
+	stringstream input;
+	generatePlayerInput( player, combinations, input );
 	
-	const string result = callProcess( player.executable + " < " + temporaryFileName );
+	const string result = callProcess( input.str(), player.executable );
 	
 	cout << result;
 

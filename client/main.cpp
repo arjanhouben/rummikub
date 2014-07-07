@@ -248,6 +248,23 @@ struct Combinations : vector< Tiles >
 	}
 };
 
+struct Option
+{
+	Combinations sets;
+	Tiles inhand;
+	Tiles tiles() const
+	{
+		Tiles total { inhand };
+		for ( auto &s : sets )
+		{
+			total.insert( total.end(), s.begin(), s.end() );
+		}
+		return total;
+	}
+};
+
+using Options = vector< Option >;
+
 template < typename T >
 istream& operator >> ( istream &str, T &tiles )
 {
@@ -366,70 +383,182 @@ void remove( Tiles &tiles, const Combinations &combinations )
 	}
 }
 
-Combinations createCombinations( Tiles tiles )
+template < typename Iterator >
+Tiles getSequenceCombos( Tile base, Iterator start, Iterator end )
 {
-	Combinations result;
+	if ( start == end ) return {};
 	
-	for ( auto &col : { color::red, color::yellow, color::blue, color::black } )
+	Tiles copy( start, end );
+	start = copy.begin();
+	end = copy.end();
+	
+	value_type color = base.color();
+	
+	auto colorEnd = remove_if( start, end,
+							  [color]( Tile t )
+							  {
+								  return color != t.color();
+							  }
+							  );
+	
+	
+	if ( colorEnd - start < 3 )
 	{
-		auto colortiles = tiles | filter( col );
-		sort( colortiles );
-		unique( colortiles );
-		auto start = colortiles.begin();
-		auto val = ( *start++ ) & number::mask;
-		while ( start != colortiles.end() )
-		{
-			auto nextval = *start & number::mask;
-			if ( !adjecent( val, nextval ) )
-			{
-				break;
-			}
-			
-			val = nextval;
-			
-			++start;
-		}
-		auto size = start - colortiles.begin();
-		if ( size > 2 )
-		{
-			result.push_back( { colortiles.begin(), start } );
-			
-			remove( tiles, result.back() );
-		}
+		return {};
 	}
 	
-	for ( auto &num : { number::one, number::two, number::three, number::four, number::five, number::six, number::seven, number::eight, number::nine, number::ten, number::eleven, number::twelve, number::thirteen } )
+	copy.erase( colorEnd, copy.end() );
+	
+	
+	sort( start, colorEnd );
+	
+	auto uniqueEnd = unique( start, colorEnd );
+	auto last = base.number();
+	while ( ++start != uniqueEnd )
 	{
-		auto numbertiles = tiles | filter( num );
-		sort( numbertiles );
-		unique( numbertiles );
-		auto mask = color::mask;
-		Tiles tmp;
-		for ( auto &t : numbertiles )
+		if ( !adjecent( start->number(), last ) )
 		{
-			if ( t & mask )
-			{
-				tmp.push_back( t );
-			}
+			copy.erase( start, copy.end() );
+			break;
 		}
-		if ( tmp.size() > 2 )
-		{
-			remove( tiles, tmp );
-			result.push_back( move( tmp ) );
-		}
+		last = start->number();
 	}
 	
-	return result;
+	if ( copy.size() < 3 )
+	{
+		return {};
+	}
+	
+	return copy;
+}
+
+template < typename Iterator >
+Tiles getColorCombos( Tile base, Iterator start, Iterator end )
+{
+	if ( start == end ) return {};
+	
+	Tiles copy( start, end );
+	start = copy.begin();
+	end = copy.end();
+	
+	auto number = base.number();
+	
+	auto numberEnd = remove_if( start, end,
+							   [&number]( Tile t )
+							   {
+								   return number != t.number();
+							   }
+							   );
+	
+	if ( numberEnd - start < 3 )
+	{
+		return {};
+	}
+	
+	value_type color = color::mask;//~base.color();
+	
+	auto colorEnd = remove_if( start, numberEnd,
+							  [&color]( Tile t )
+							  {
+								  if ( t.color() & color )
+								  {
+									  color &= ~t.color();
+									  return false;
+								  }
+								  return true;
+							  }
+							  );
+	
+	if ( colorEnd - start < 3 )
+	{
+		return {};
+	}
+	
+	copy.erase( colorEnd, copy.end() );
+	
+	
+	
+	return copy;
+}
+
+template < typename Container >
+Options getCombinations( Container tiles )
+{
+	if ( tiles.empty() ) return {};
+	
+	Option option;
+	for ( auto i = tiles.begin(); i != tiles.end(); )
+	{
+		auto combo = getColorCombos( *i, tiles.begin(), tiles.end() );
+		if ( combo.empty() )
+		{
+			++i;
+		}
+		remove( tiles, combo );
+		i = tiles.begin();
+		option.sets.push_back( combo );
+	}
+	option.inhand = tiles;
+//	for ( auto i = start; i != end; ++i )
+//	{
+//		options.push_back( getSequenceCombos( *i, start, end ) );
+//	}
+	
+	return { option };
+}
+
+Options getAllCombinations( const Option &current )
+{
+	auto options = getCombinations( current.tiles() );
+	
+	for ( auto opt = options.begin(); opt != options.end(); )
+	{
+		for ( auto &t : opt->inhand )
+		{
+			if ( find( current.inhand.begin(), current.inhand.end(), t ) == current.inhand.end() )
+			{
+				// invalid option
+				opt = options.erase( opt );
+			}
+			else
+			{
+				++opt;
+			}
+		}
+	}
+	return options;
 }
 
 int main(int,char**)
 {
 	try
 	{
+#if 0
+		Tiles testset = {
+			{ color::red, number::one },
+			{ color::red, number::two },
+			{ color::red, number::three },
+			{ color::black, number::one },
+			{ color::black, number::two },
+			{ color::black, number::three },
+			{ color::yellow, number::one },
+			{ color::yellow, number::two },
+			{ color::yellow, number::three }
+		};
+		
+		cout << testset << endl;
+		
+		auto combtest = getAllCombinations( { {}, testset } );
+		
+		for ( auto &i : combtest )
+			cout << i.sets << endl;
+		return 0;
+#endif
+		
 		test::run();
 		
-		ifstream input( "/tmp/1.txt" );
-		//	istream &input( cin );
+//		ifstream input( "/tmp/1.txt" );
+		istream &input( cin );
 		
 		string line;
 		while ( getline( input, line ) )
@@ -464,12 +593,12 @@ int main(int,char**)
 		Tiles combined = field.tiles() + hand;
 		
 		field.clear();
-
-		Combinations fromHand = createCombinations( combined );
-		for ( auto &s : fromHand )
-		{
-			field.push_back( s );
-		}
+//
+//		Combinations fromHand = createCombinations( combined );
+//		for ( auto &s : fromHand )
+//		{
+//			field.push_back( s );
+//		}
 		
 		cout << field << endl;
 	}
