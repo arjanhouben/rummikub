@@ -279,203 +279,112 @@ inline bool adjecent( value_type a, value_type b )
 using filter_type = function< bool(value_type) >;
 
 template < typename Container >
-Container operator | ( const Container &container, filter_type f )
+Container operator | ( Container container, filter_type f )
 {
-	Container result;
-	for ( auto &i : container )
-	{
-		if ( f( i ) )
-		{
-			result.push_back( i );
-		}
-	}
-	return result;
+	container.erase( remove_if( container.begin(), container.end(), f ), container.end() );
+	return container;
 }
 
-filter_type filter( value_type t )
+filter_type keep( value_type t )
 {
-	return { [t]( value_type i ) { return i & t; } };
+	return { [t]( value_type i ) { return ( i & t ) == 0; } };
+}
+
+filter_type remove( value_type t )
+{
+	return { [t]( value_type i ) { return ( i & t ) != 0; } };
 }
 
 template < typename T >
-void unique( T &source )
+T unique( T source )
 {
-	auto end = unique( source.begin(), source.end() );
-	source.resize( end - source.begin() );
+	source.erase( unique( source.begin(), source.end() ), source.end() );
+	return source;
 }
 
-void remove( Tiles &tiles, const Tile &tile )
+value_type mask( const Tiles &tiles )
 {
-	auto found = find( tiles.begin(), tiles.end(), tile );
-	if ( found != tiles.end() )
-	{
-		tiles.erase( found );
-	}
+	value_type m = 0;
+	for ( auto &t : tiles ) m |= t;
+	return m;
 }
 
-void remove( Tiles &tiles, const Tiles &removetiles )
+void removeFromTiles( Tiles &tiles, const Tiles remove )
 {
-	for ( auto &r : removetiles )
+	for ( auto &r : remove )
 	{
-		remove( tiles, r );
-	}
-}
-
-void remove( Tiles &tiles, const Combinations &combinations )
-{
-	for ( auto &set : combinations )
-	{
-		for ( auto &tile : set )
+		for ( auto i = tiles.begin(); i != tiles.end(); ++i )
 		{
-			remove( tiles, tile );
-		}
-	}
-}
-
-template < typename Iterator >
-Tiles getSequenceCombos( Tile base, Iterator start, Iterator end )
-{
-	if ( start == end ) return {};
-	
-	Tiles copy( start, end );
-	start = copy.begin();
-	end = copy.end();
-	
-	value_type color = base.color();
-	
-	auto colorEnd = remove_if( start, end,
-							  [color]( Tile t )
-							  {
-								  return color != t.color();
-							  }
-							  );
-	
-	
-	if ( colorEnd - start < 3 )
-	{
-		return {};
-	}
-	
-	copy.erase( colorEnd, copy.end() );
-	
-	
-	sort( start, colorEnd );
-	
-	auto uniqueEnd = unique( start, colorEnd );
-	auto last = base.number();
-	while ( ++start != uniqueEnd )
-	{
-		if ( !adjecent( start->number(), last ) )
-		{
-			copy.erase( start, copy.end() );
-			break;
-		}
-		last = start->number();
-	}
-	
-	if ( copy.size() < 3 )
-	{
-		return {};
-	}
-	
-	return copy;
-}
-
-template < typename Iterator >
-Tiles getColorCombos( Tile base, Iterator start, Iterator end )
-{
-	if ( start == end ) return {};
-	
-	Tiles copy( start, end );
-	start = copy.begin();
-	end = copy.end();
-	
-	auto number = base.number();
-	
-	auto numberEnd = remove_if( start, end,
-							   [&number]( Tile t )
-							   {
-								   return number != t.number();
-							   }
-							   );
-	
-	if ( numberEnd - start < 3 )
-	{
-		return {};
-	}
-	
-	value_type color = color::mask;//~base.color();
-	
-	auto colorEnd = remove_if( start, numberEnd,
-							  [&color]( Tile t )
-							  {
-								  if ( t.color() & color )
-								  {
-									  color &= ~t.color();
-									  return false;
-								  }
-								  return true;
-							  }
-							  );
-	
-	if ( colorEnd - start < 3 )
-	{
-		return {};
-	}
-	
-	copy.erase( colorEnd, copy.end() );
-	
-	
-	
-	return copy;
-}
-
-template < typename Container >
-Options getCombinations( Container tiles )
-{
-	if ( tiles.empty() ) return {};
-	
-	Option option;
-	for ( auto i = tiles.begin(); i != tiles.end(); )
-	{
-		auto combo = getColorCombos( *i, tiles.begin(), tiles.end() );
-		if ( combo.empty() )
-		{
-			++i;
-		}
-		remove( tiles, combo );
-		i = tiles.begin();
-		option.sets.push_back( combo );
-	}
-	option.inhand = tiles;
-//	for ( auto i = start; i != end; ++i )
-//	{
-//		options.push_back( getSequenceCombos( *i, start, end ) );
-//	}
-	
-	return { option };
-}
-
-Options getAllCombinations( const Option &current )
-{
-	auto options = getCombinations( current.tiles() );
-	
-	for ( auto opt = options.begin(); opt != options.end(); )
-	{
-		for ( auto &t : opt->inhand )
-		{
-			if ( find( current.inhand.begin(), current.inhand.end(), t ) == current.inhand.end() )
+			if ( *i == r )
 			{
-				// invalid option
-				opt = options.erase( opt );
-			}
-			else
-			{
-				++opt;
+				tiles.erase( i );
+				break;
 			}
 		}
 	}
-	return options;
+}
+
+void appendToField( Combinations &field, Tiles &hand )
+{
+	for ( auto &set : field )
+	{
+		const auto m = mask( set );
+		const auto colorMask = static_cast< color::type >( m & color::mask );
+		const auto numberMask = static_cast< number::type >( m & number::mask );
+		switch ( colorMask )
+		{
+			case color::red:
+			case color::yellow:
+			case color::blue:
+			case color::black:
+			{
+				auto required = Tile( static_cast< number::type >( set.front().number() - 1 ), colorMask );
+				auto found = find( hand.begin(), hand.end(), required );
+				if ( found != hand.end() )
+				{
+					set.insert( set.begin(), *found );
+					hand.erase( found );
+				}
+				required = Tile( static_cast< number::type >( set.back().number() + 1 ), colorMask );
+				found = find( hand.begin(), hand.end(), required );
+				if ( found != hand.end() )
+				{
+					set.push_back( *found );
+					hand.erase( found );
+				}
+			}
+			default:
+				break;
+		}
+		switch ( numberMask )
+		{
+			case number::one:
+			case number::two:
+			case number::three:
+			case number::four:
+			case number::five:
+			case number::six:
+			case number::seven:
+			case number::eight:
+			case number::nine:
+			case number::ten:
+			case number::eleven:
+			case number::twelve:
+			{
+				auto add = unique( hand | keep( numberMask ) | remove( colorMask ) );
+				set.insert( set.end(), add.begin(), add.end() );
+				sort( set.begin(), set.end() );
+				removeFromTiles( hand, add );
+			}
+			default:
+				break;
+		}
+	}
+}
+
+Tiles findNumberSequence( Tiles &hand )
+{
+	return {};
 }
 
 int main(int,char**)
@@ -514,7 +423,12 @@ int main(int,char**)
 			}
 		}
 		
-		Tiles combined = field.tiles() + hand;
+		appendToField( field, hand );
+		
+		for ( auto found = findNumberSequence( hand ); !found.empty(); )
+		{
+			field.push_back( found );
+		}
 		
 		cout << field << endl;
 	}
