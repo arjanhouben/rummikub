@@ -371,11 +371,11 @@ class Dll
 			{
 				if ( chrono::duration_cast< chrono::milliseconds >( chrono::system_clock::now() - start ).count() < ms )
 				{
-					usleep( 1e3 );
+					this_thread::sleep_for( chrono::milliseconds( 1 ) );
 				}
 				else
 				{
-					thread_.join();
+					thread_.detach();
 					throw runtime_error( "player took too long to respond!" );
 				}
 			}

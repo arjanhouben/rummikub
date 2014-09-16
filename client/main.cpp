@@ -12,44 +12,6 @@ using namespace std;
 
 using value_type = uint32_t;
 
-class test
-{
-	public:
-		template < typename T >
-		test( T &&t )
-		{
-			tests_.push_back( move( t ) );
-		}
-		static void run()
-		{
-			for ( auto &test : tests_ )
-			{
-				test();
-			}
-		}
-		template < typename A, typename B >
-		static void equal( size_t lineNr, A a, B b )
-		{
-			if ( a != b )
-			{
-				cerr << "error on line " + to_string( lineNr ) << ", " << a << " not equal to " << b << endl;
-				exit( 1 );
-			}
-		}
-		static void is_true( size_t lineNr, bool a )
-		{
-			if ( !a )
-			{
-				cerr << "error on line " + to_string( lineNr ) << endl;
-				exit( 1 );
-			}
-		}
-	private:
-		static vector< function< void() > > tests_;
-};
-
-vector< function< void() > > test::tests_;
-
 namespace color
 {
 	enum type
@@ -314,19 +276,6 @@ inline bool adjecent( value_type a, value_type b )
 	return ( ( a >> 1 ) | ( a << 1 ) ) & b;
 }
 
-test adjecent_test = []()
-{
-	value_type a, b;
-	a = 1 << 2;
-	b = 1 << 3;
-	test::is_true( __LINE__, adjecent( a, b ) );
-	a = 1 << 4;
-	test::is_true( __LINE__, adjecent( a, b ) );
-	a = 1 << 5;
-	test::is_true( __LINE__, !adjecent( a, b ) );
-};
-
-
 using filter_type = function< bool(value_type) >;
 
 template < typename Container >
@@ -533,31 +482,6 @@ int main(int,char**)
 {
 	try
 	{
-#if 0
-		Tiles testset = {
-			{ color::red, number::one },
-			{ color::red, number::two },
-			{ color::red, number::three },
-			{ color::black, number::one },
-			{ color::black, number::two },
-			{ color::black, number::three },
-			{ color::yellow, number::one },
-			{ color::yellow, number::two },
-			{ color::yellow, number::three }
-		};
-		
-		cout << testset << endl;
-		
-		auto combtest = getAllCombinations( { {}, testset } );
-		
-		for ( auto &i : combtest )
-			cout << i.sets << endl;
-		return 0;
-#endif
-		
-		test::run();
-		
-//		ifstream input( "/tmp/1.txt" );
 		istream &input( cin );
 		
 		string line;
@@ -591,14 +515,6 @@ int main(int,char**)
 		}
 		
 		Tiles combined = field.tiles() + hand;
-		
-		field.clear();
-//
-//		Combinations fromHand = createCombinations( combined );
-//		for ( auto &s : fromHand )
-//		{
-//			field.push_back( s );
-//		}
 		
 		cout << field << endl;
 	}
